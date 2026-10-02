@@ -1,0 +1,62 @@
+# Builds Frameline on a Codemagic Mac and packages it as an unsigned .ipa.
+#
+# The packaging step does what you would otherwise do by hand: it puts
+# Frameline.app in a folder called Payload and zips that folder as an .ipa.
+# The result appears under "Artifacts" on the build page.
+#
+# An unsigned .ipa cannot be installed as it is. Sign it with your own Apple
+# Developer account (for example with a re-signing or sideloading tool), or add
+# code signing to this workflow in Codemagic.
+
+workflows:
+  unsigned-ipa:
+    name: Frameline unsigned IPA
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    environment:
+      xcode: latest
+      vars:
+        XCODE_PROJECT: "Frameline.xcodeproj"
+        XCODE_SCHEME: "Frameline"
+        APP_NAME: "Frameline"
+    scripts:
+      - name: Show toolchain
+        script: |
+          xcodebuild -version
+          swift --version
+      - name: Build for iPhone without code signing
+        script: |
+          set -eo pipefail
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath "$CM_BUILD_DIR/build" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build | tee "$CM_BUILD_DIR/xcodebuild.log"
+      - name: Package Payload as .ipa
+        script: |
+          set -e
+          APP_PATH="$CM_BUILD_DIR/build/Build/Products/Release-iphoneos/$APP_NAME.app"
+          test -d "$APP_PATH"
+          cd "$CM_BUILD_DIR"
+          rm -rf Payload "$APP_NAME-unsigned.ipa"
+          mkdir Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qry "$APP_NAME-unsigned.ipa" Payload
+          ls -lh "$APP_NAME-unsigned.ipa"
+    artifacts:
+      - Frameline-unsigned.ipa
+      - xcodebuild.log
+    # To have the build emailed to you, uncomment this and add your address.
+    # publishing:
+    #   email:
+    #     recipients:
+    #       - you@example.com
+    #     notify:
+    #       success: true
+    #       failure: true
